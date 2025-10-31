@@ -55,6 +55,12 @@ import (
 	"github.com/envoyproxy/gateway/internal/xds/bootstrap"
 )
 
+const (
+	// policyListBatchSize defines the batch size for paginated policy listing.
+	// This helps prevent memory issues when processing large numbers of policies.
+	policyListBatchSize = 1000
+)
+
 var skipNameValidation = func() *bool {
 	return ptr.To(false)
 }
@@ -1645,21 +1651,52 @@ func (r *gatewayAPIReconciler) processServiceClusterForGateway(ep *egv1a1.EnvoyP
 
 // processEnvoyPatchPolicies adds EnvoyPatchPolicies to the resourceTree
 func (r *gatewayAPIReconciler) processEnvoyPatchPolicies(ctx context.Context, resourceTree *resource.Resources, resourceMap *resourceMappings) error {
-	envoyPatchPolicies := egv1a1.EnvoyPatchPolicyList{}
-	if err := r.client.List(ctx, &envoyPatchPolicies); err != nil {
-		return fmt.Errorf("error listing EnvoyPatchPolicies: %w", err)
-	}
+	// Process EnvoyPatchPolicies in batches using pagination
+	continueToken := ""
+	totalProcessed := 0
 
-	for i := range envoyPatchPolicies.Items {
-		envoyPatchPolicy := &envoyPatchPolicies.Items[i]
-		// Discard Status to reduce memory consumption in watchable
-		// It will be recomputed by the gateway-api layer
-		envoyPatchPolicy.Status = gwapiv1.PolicyStatus{}
-		if !resourceMap.allAssociatedEnvoyPatchPolicies.Has(utils.NamespacedName(envoyPatchPolicy).String()) {
-			resourceMap.allAssociatedEnvoyPatchPolicies.Insert(utils.NamespacedName(envoyPatchPolicy).String())
-			resourceTree.EnvoyPatchPolicies = append(resourceTree.EnvoyPatchPolicies, envoyPatchPolicy)
+	for {
+		envoyPatchPolicies := egv1a1.EnvoyPatchPolicyList{}
+		listOpts := &client.ListOptions{
+			Limit:    policyListBatchSize,
+			Continue: continueToken,
+		}
+
+		if err := r.client.List(ctx, &envoyPatchPolicies, listOpts); err != nil {
+			return fmt.Errorf("error listing EnvoyPatchPolicies: %w", err)
+		}
+
+		batchSize := len(envoyPatchPolicies.Items)
+		if batchSize > 0 {
+			r.log.V(1).Info("processing EnvoyPatchPolicy batch",
+				"batchSize", batchSize,
+				"totalProcessed", totalProcessed)
+		}
+
+		for i := range envoyPatchPolicies.Items {
+			envoyPatchPolicy := &envoyPatchPolicies.Items[i]
+			// Discard Status to reduce memory consumption in watchable
+			// It will be recomputed by the gateway-api layer
+			envoyPatchPolicy.Status = gwapiv1.PolicyStatus{}
+			if !resourceMap.allAssociatedEnvoyPatchPolicies.Has(utils.NamespacedName(envoyPatchPolicy).String()) {
+				resourceMap.allAssociatedEnvoyPatchPolicies.Insert(utils.NamespacedName(envoyPatchPolicy).String())
+				resourceTree.EnvoyPatchPolicies = append(resourceTree.EnvoyPatchPolicies, envoyPatchPolicy)
+			}
+		}
+
+		totalProcessed += batchSize
+
+		// Check if there are more results to fetch
+		continueToken = envoyPatchPolicies.GetContinue()
+		if continueToken == "" {
+			break
 		}
 	}
+
+	if totalProcessed > 0 {
+		r.log.Info("completed processing EnvoyPatchPolicies", "total", totalProcessed)
+	}
+
 	return nil
 }
 
@@ -1667,20 +1704,50 @@ func (r *gatewayAPIReconciler) processEnvoyPatchPolicies(ctx context.Context, re
 func (r *gatewayAPIReconciler) processClientTrafficPolicies(
 	ctx context.Context, resourceTree *resource.Resources, resourceMap *resourceMappings,
 ) error {
-	clientTrafficPolicies := egv1a1.ClientTrafficPolicyList{}
-	if err := r.client.List(ctx, &clientTrafficPolicies); err != nil {
-		return fmt.Errorf("error listing ClientTrafficPolicies: %w", err)
+	// Process ClientTrafficPolicies in batches using pagination
+	continueToken := ""
+	totalProcessed := 0
+
+	for {
+		clientTrafficPolicies := egv1a1.ClientTrafficPolicyList{}
+		listOpts := &client.ListOptions{
+			Limit:    policyListBatchSize,
+			Continue: continueToken,
+		}
+
+		if err := r.client.List(ctx, &clientTrafficPolicies, listOpts); err != nil {
+			return fmt.Errorf("error listing ClientTrafficPolicies: %w", err)
+		}
+
+		batchSize := len(clientTrafficPolicies.Items)
+		if batchSize > 0 {
+			r.log.V(1).Info("processing ClientTrafficPolicy batch",
+				"batchSize", batchSize,
+				"totalProcessed", totalProcessed)
+		}
+
+		for i := range clientTrafficPolicies.Items {
+			clientTrafficPolicy := &clientTrafficPolicies.Items[i]
+			// Discard Status to reduce memory consumption in watchable
+			// It will be recomputed by the gateway-api layer
+			clientTrafficPolicy.Status = gwapiv1.PolicyStatus{}
+			if !resourceMap.allAssociatedClientTrafficPolicies.Has(utils.NamespacedName(clientTrafficPolicy).String()) {
+				resourceMap.allAssociatedClientTrafficPolicies.Insert(utils.NamespacedName(clientTrafficPolicy).String())
+				resourceTree.ClientTrafficPolicies = append(resourceTree.ClientTrafficPolicies, clientTrafficPolicy)
+			}
+		}
+
+		totalProcessed += batchSize
+
+		// Check if there are more results to fetch
+		continueToken = clientTrafficPolicies.GetContinue()
+		if continueToken == "" {
+			break
+		}
 	}
 
-	for i := range clientTrafficPolicies.Items {
-		clientTrafficPolicy := &clientTrafficPolicies.Items[i]
-		// Discard Status to reduce memory consumption in watchable
-		// It will be recomputed by the gateway-api layer
-		clientTrafficPolicy.Status = gwapiv1.PolicyStatus{}
-		if !resourceMap.allAssociatedClientTrafficPolicies.Has(utils.NamespacedName(clientTrafficPolicy).String()) {
-			resourceMap.allAssociatedClientTrafficPolicies.Insert(utils.NamespacedName(clientTrafficPolicy).String())
-			resourceTree.ClientTrafficPolicies = append(resourceTree.ClientTrafficPolicies, clientTrafficPolicy)
-		}
+	if totalProcessed > 0 {
+		r.log.Info("completed processing ClientTrafficPolicies", "total", totalProcessed)
 	}
 
 	return r.processCTPCACertificateRefs(ctx, resourceTree, resourceMap)
@@ -1689,21 +1756,52 @@ func (r *gatewayAPIReconciler) processClientTrafficPolicies(
 // processBackendTrafficPolicies adds BackendTrafficPolicies to the resourceTree
 func (r *gatewayAPIReconciler) processBackendTrafficPolicies(ctx context.Context, resourceTree *resource.Resources, resourceMap *resourceMappings,
 ) error {
-	backendTrafficPolicies := egv1a1.BackendTrafficPolicyList{}
-	if err := r.client.List(ctx, &backendTrafficPolicies); err != nil {
-		return fmt.Errorf("error listing BackendTrafficPolicies: %w", err)
-	}
+	// Process BackendTrafficPolicies in batches using pagination
+	continueToken := ""
+	totalProcessed := 0
 
-	for i := range backendTrafficPolicies.Items {
-		backendTrafficPolicy := &backendTrafficPolicies.Items[i]
-		// Discard Status to reduce memory consumption in watchable
-		// It will be recomputed by the gateway-api layer
-		backendTrafficPolicy.Status = gwapiv1.PolicyStatus{}
-		if !resourceMap.allAssociatedBackendTrafficPolicies.Has(utils.NamespacedName(backendTrafficPolicy).String()) {
-			resourceMap.allAssociatedBackendTrafficPolicies.Insert(utils.NamespacedName(backendTrafficPolicy).String())
-			resourceTree.BackendTrafficPolicies = append(resourceTree.BackendTrafficPolicies, backendTrafficPolicy)
+	for {
+		backendTrafficPolicies := egv1a1.BackendTrafficPolicyList{}
+		listOpts := &client.ListOptions{
+			Limit:    policyListBatchSize,
+			Continue: continueToken,
+		}
+
+		if err := r.client.List(ctx, &backendTrafficPolicies, listOpts); err != nil {
+			return fmt.Errorf("error listing BackendTrafficPolicies: %w", err)
+		}
+
+		batchSize := len(backendTrafficPolicies.Items)
+		if batchSize > 0 {
+			r.log.V(1).Info("processing BackendTrafficPolicy batch",
+				"batchSize", batchSize,
+				"totalProcessed", totalProcessed)
+		}
+
+		for i := range backendTrafficPolicies.Items {
+			backendTrafficPolicy := &backendTrafficPolicies.Items[i]
+			// Discard Status to reduce memory consumption in watchable
+			// It will be recomputed by the gateway-api layer
+			backendTrafficPolicy.Status = gwapiv1.PolicyStatus{}
+			if !resourceMap.allAssociatedBackendTrafficPolicies.Has(utils.NamespacedName(backendTrafficPolicy).String()) {
+				resourceMap.allAssociatedBackendTrafficPolicies.Insert(utils.NamespacedName(backendTrafficPolicy).String())
+				resourceTree.BackendTrafficPolicies = append(resourceTree.BackendTrafficPolicies, backendTrafficPolicy)
+			}
+		}
+
+		totalProcessed += batchSize
+
+		// Check if there are more results to fetch
+		continueToken = backendTrafficPolicies.GetContinue()
+		if continueToken == "" {
+			break
 		}
 	}
+
+	if totalProcessed > 0 {
+		r.log.Info("completed processing BackendTrafficPolicies", "total", totalProcessed)
+	}
+
 	return r.processBtpConfigMapRefs(ctx, resourceTree, resourceMap)
 }
 
@@ -1711,20 +1809,50 @@ func (r *gatewayAPIReconciler) processBackendTrafficPolicies(ctx context.Context
 func (r *gatewayAPIReconciler) processSecurityPolicies(
 	ctx context.Context, resourceTree *resource.Resources, resourceMap *resourceMappings,
 ) error {
-	securityPolicies := egv1a1.SecurityPolicyList{}
-	if err := r.client.List(ctx, &securityPolicies); err != nil {
-		return fmt.Errorf("error listing SecurityPolicies: %w", err)
+	// Process SecurityPolicies in batches using pagination
+	continueToken := ""
+	totalProcessed := 0
+
+	for {
+		securityPolicies := egv1a1.SecurityPolicyList{}
+		listOpts := &client.ListOptions{
+			Limit:    policyListBatchSize,
+			Continue: continueToken,
+		}
+
+		if err := r.client.List(ctx, &securityPolicies, listOpts); err != nil {
+			return fmt.Errorf("error listing SecurityPolicies: %w", err)
+		}
+
+		batchSize := len(securityPolicies.Items)
+		if batchSize > 0 {
+			r.log.V(1).Info("processing SecurityPolicy batch",
+				"batchSize", batchSize,
+				"totalProcessed", totalProcessed)
+		}
+
+		for i := range securityPolicies.Items {
+			securityPolicy := &securityPolicies.Items[i]
+			// Discard Status to reduce memory consumption in watchable
+			// It will be recomputed by the gateway-api layer
+			securityPolicy.Status = gwapiv1.PolicyStatus{}
+			if !resourceMap.allAssociatedSecurityPolicies.Has(utils.NamespacedName(securityPolicy).String()) {
+				resourceMap.allAssociatedSecurityPolicies.Insert(utils.NamespacedName(securityPolicy).String())
+				resourceTree.SecurityPolicies = append(resourceTree.SecurityPolicies, securityPolicy)
+			}
+		}
+
+		totalProcessed += batchSize
+
+		// Check if there are more results to fetch
+		continueToken = securityPolicies.GetContinue()
+		if continueToken == "" {
+			break
+		}
 	}
 
-	for i := range securityPolicies.Items {
-		securityPolicy := &securityPolicies.Items[i]
-		// Discard Status to reduce memory consumption in watchable
-		// It will be recomputed by the gateway-api layer
-		securityPolicy.Status = gwapiv1.PolicyStatus{}
-		if !resourceMap.allAssociatedSecurityPolicies.Has(utils.NamespacedName(securityPolicy).String()) {
-			resourceMap.allAssociatedSecurityPolicies.Insert(utils.NamespacedName(securityPolicy).String())
-			resourceTree.SecurityPolicies = append(resourceTree.SecurityPolicies, securityPolicy)
-		}
+	if totalProcessed > 0 {
+		r.log.Info("completed processing SecurityPolicies", "total", totalProcessed)
 	}
 
 	// Add the referenced Resources in SecurityPolicies to the resourceTree
@@ -1735,20 +1863,50 @@ func (r *gatewayAPIReconciler) processSecurityPolicies(
 func (r *gatewayAPIReconciler) processBackendTLSPolicies(
 	ctx context.Context, resourceTree *resource.Resources, resourceMap *resourceMappings,
 ) error {
-	backendTLSPolicies := gwapiv1.BackendTLSPolicyList{}
-	if err := r.client.List(ctx, &backendTLSPolicies); err != nil {
-		return fmt.Errorf("error listing BackendTLSPolicies: %w", err)
+	// Process BackendTLSPolicies in batches using pagination
+	continueToken := ""
+	totalProcessed := 0
+
+	for {
+		backendTLSPolicies := gwapiv1.BackendTLSPolicyList{}
+		listOpts := &client.ListOptions{
+			Limit:    policyListBatchSize,
+			Continue: continueToken,
+		}
+
+		if err := r.client.List(ctx, &backendTLSPolicies, listOpts); err != nil {
+			return fmt.Errorf("error listing BackendTLSPolicies: %w", err)
+		}
+
+		batchSize := len(backendTLSPolicies.Items)
+		if batchSize > 0 {
+			r.log.V(1).Info("processing BackendTLSPolicy batch",
+				"batchSize", batchSize,
+				"totalProcessed", totalProcessed)
+		}
+
+		for i := range backendTLSPolicies.Items {
+			backendTLSPolicy := &backendTLSPolicies.Items[i]
+			// Discard Status to reduce memory consumption in watchable
+			// It will be recomputed by the gateway-api layer
+			backendTLSPolicy.Status = gwapiv1.PolicyStatus{}
+			if !resourceMap.allAssociatedBackendTLSPolicies.Has(utils.NamespacedName(backendTLSPolicy).String()) {
+				resourceMap.allAssociatedBackendTLSPolicies.Insert(utils.NamespacedName(backendTLSPolicy).String())
+				resourceTree.BackendTLSPolicies = append(resourceTree.BackendTLSPolicies, backendTLSPolicy)
+			}
+		}
+
+		totalProcessed += batchSize
+
+		// Check if there are more results to fetch
+		continueToken = backendTLSPolicies.GetContinue()
+		if continueToken == "" {
+			break
+		}
 	}
 
-	for i := range backendTLSPolicies.Items {
-		backendTLSPolicy := &backendTLSPolicies.Items[i]
-		// Discard Status to reduce memory consumption in watchable
-		// It will be recomputed by the gateway-api layer
-		backendTLSPolicy.Status = gwapiv1.PolicyStatus{}
-		if !resourceMap.allAssociatedBackendTLSPolicies.Has(utils.NamespacedName(backendTLSPolicy).String()) {
-			resourceMap.allAssociatedBackendTLSPolicies.Insert(utils.NamespacedName(backendTLSPolicy).String())
-			resourceTree.BackendTLSPolicies = append(resourceTree.BackendTLSPolicies, backendTLSPolicy)
-		}
+	if totalProcessed > 0 {
+		r.log.Info("completed processing BackendTLSPolicies", "total", totalProcessed)
 	}
 
 	// Add the referenced Secrets and ConfigMaps in BackendTLSPolicies to the resourceTree.
@@ -2661,20 +2819,50 @@ func (r *gatewayAPIReconciler) processBackendTLSPolicyRefs(
 func (r *gatewayAPIReconciler) processEnvoyExtensionPolicies(
 	ctx context.Context, resourceTree *resource.Resources, resourceMap *resourceMappings,
 ) error {
-	envoyExtensionPolicies := egv1a1.EnvoyExtensionPolicyList{}
-	if err := r.client.List(ctx, &envoyExtensionPolicies); err != nil {
-		return fmt.Errorf("error listing EnvoyExtensionPolicies: %w", err)
+	// Process EnvoyExtensionPolicies in batches using pagination
+	continueToken := ""
+	totalProcessed := 0
+
+	for {
+		envoyExtensionPolicies := egv1a1.EnvoyExtensionPolicyList{}
+		listOpts := &client.ListOptions{
+			Limit:    policyListBatchSize,
+			Continue: continueToken,
+		}
+
+		if err := r.client.List(ctx, &envoyExtensionPolicies, listOpts); err != nil {
+			return fmt.Errorf("error listing EnvoyExtensionPolicies: %w", err)
+		}
+
+		batchSize := len(envoyExtensionPolicies.Items)
+		if batchSize > 0 {
+			r.log.V(1).Info("processing EnvoyExtensionPolicy batch",
+				"batchSize", batchSize,
+				"totalProcessed", totalProcessed)
+		}
+
+		for i := range envoyExtensionPolicies.Items {
+			envoyExtensionPolicy := &envoyExtensionPolicies.Items[i]
+			// Discard Status to reduce memory consumption in watchable
+			// It will be recomputed by the gateway-api layer
+			envoyExtensionPolicy.Status = gwapiv1.PolicyStatus{}
+			if !resourceMap.allAssociatedEnvoyExtensionPolicies.Has(utils.NamespacedName(envoyExtensionPolicy).String()) {
+				resourceMap.allAssociatedEnvoyExtensionPolicies.Insert(utils.NamespacedName(envoyExtensionPolicy).String())
+				resourceTree.EnvoyExtensionPolicies = append(resourceTree.EnvoyExtensionPolicies, envoyExtensionPolicy)
+			}
+		}
+
+		totalProcessed += batchSize
+
+		// Check if there are more results to fetch
+		continueToken = envoyExtensionPolicies.GetContinue()
+		if continueToken == "" {
+			break
+		}
 	}
 
-	for i := range envoyExtensionPolicies.Items {
-		envoyExtensionPolicy := &envoyExtensionPolicies.Items[i]
-		// Discard Status to reduce memory consumption in watchable
-		// It will be recomputed by the gateway-api layer
-		envoyExtensionPolicy.Status = gwapiv1.PolicyStatus{}
-		if !resourceMap.allAssociatedEnvoyExtensionPolicies.Has(utils.NamespacedName(envoyExtensionPolicy).String()) {
-			resourceMap.allAssociatedEnvoyExtensionPolicies.Insert(utils.NamespacedName(envoyExtensionPolicy).String())
-			resourceTree.EnvoyExtensionPolicies = append(resourceTree.EnvoyExtensionPolicies, envoyExtensionPolicy)
-		}
+	if totalProcessed > 0 {
+		r.log.Info("completed processing EnvoyExtensionPolicies", "total", totalProcessed)
 	}
 
 	// Add the referenced Resources in EnvoyExtensionPolicies to the resourceTree
