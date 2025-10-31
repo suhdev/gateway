@@ -62,6 +62,8 @@ var ScaleHTTPRoutes30K = suite.BenchmarkTest{
 					tlog.Logf(t, "Start scaling up HTTPRoutes to %d with %d routes per hostname", scale, routePerHost)
 					startTime := time.Now()
 
+					// For this test, we only scale once (30000 routes), so batch starts at 0
+					// routePerHost-batch = 3000-0 = 3000 routes per host
 					err = bSuite.ScaleUpHTTPRoutes(ctx, [2]uint16{start, scale}, routeNameFormat, routeHostnameFormat, gatewayNN.Name, routePerHost-batch,
 						func(route *gwapiv1.HTTPRoute, applyAt time.Time) {
 							routeNN := types.NamespacedName{Name: route.Name, Namespace: route.Namespace}
@@ -111,8 +113,6 @@ var ScaleHTTPRoutes30K = suite.BenchmarkTest{
 				deletedCount := 0
 				err = bSuite.ScaleDownHTTPRoutes(ctx, [2]uint16{start, scale}, routeNameFormat, gatewayNN.Name,
 					func(route *gwapiv1.HTTPRoute) {
-						routeNN := types.NamespacedName{Name: route.Name, Namespace: route.Namespace}
-
 						deletedCount++
 						// Log progress every 1000 routes
 						if deletedCount%1000 == 0 {
