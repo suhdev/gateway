@@ -41,8 +41,8 @@ Benchmark tests are built with the `benchmark` build tag and require a Kubernete
 # Run all benchmark tests
 go test -tags benchmark ./test/benchmark -v
 
-# Run specific test
-go test -tags benchmark ./test/benchmark -v -run TestBenchmark
+# Run specific test by name
+go test -tags benchmark ./test/benchmark -v -run TestBenchmark/ScaleHTTPRoute30K
 ```
 
 ## Configuration
