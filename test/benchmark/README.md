@@ -19,12 +19,14 @@ Tests gateway scalability with over 30,000 HTTPRoutes to verify it can handle la
 **Location:** `tests/scale_httproutes_30k.go`
 
 **Purpose:** Stress test the gateway with a large number of routes (30K+) to:
+
 - Verify the gateway can handle enterprise-scale deployments
 - Measure route creation and deletion performance at scale
 - Identify potential bottlenecks or memory issues
 - Validate that the gateway remains stable under heavy load
 
 **Key Features:**
+
 - Scales up to 30,000 HTTPRoutes
 - Distributes routes across 10 different hostnames (3,000 routes per host)
 - Logs progress every 1,000 routes for monitoring

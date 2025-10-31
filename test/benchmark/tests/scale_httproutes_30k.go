@@ -105,32 +105,26 @@ var ScaleHTTPRoutes30K = suite.BenchmarkTest{
 			t.Run(testName, func(t *testing.T) {
 				startTime := time.Now()
 
-				// Delete all routes
-				deletedCount := 0
-				for len(routeNNs) > 0 {
-					routeNN := routeNNs[len(routeNNs)-1]
-					routeNNs = routeNNs[:len(routeNNs)-1]
+				// Use the suite's ScaleDownHTTPRoutes method for consistency
+				err = bSuite.ScaleDownHTTPRoutes(ctx, [2]uint16{start, scale}, routeNameFormat, gatewayNN.Name,
+					func(route *gwapiv1.HTTPRoute) {
+						routeNN := types.NamespacedName{Name: route.Name, Namespace: route.Namespace}
+						// Remove from tracking list
+						if len(routeNNs) > 0 {
+							routeNNs = routeNNs[:len(routeNNs)-1]
+						}
 
-					oldRoute := bSuite.HTTPRouteTemplate.DeepCopy()
-					oldRoute.SetName(routeNN.Name)
-					oldRoute.SetNamespace(routeNN.Namespace)
-					oldRoute.SetLabels(map[string]string{
-						suite.BenchmarkTestScaledKey: "true",
+						// Log progress every 1000 routes
+						deletedCount := int(start) - len(routeNNs)
+						if deletedCount%1000 == 0 {
+							t.Logf("Deleted %d HTTPRoutes so far", deletedCount)
+						}
+						t.Logf("Delete HTTPRoute: %s", routeNN.String())
 					})
-
-					err = bSuite.DeleteResource(ctx, oldRoute)
-					if err != nil {
-						t.Logf("Warning: Failed to delete route %s: %v", routeNN.Name, err)
-					}
-
-					deletedCount++
-					if deletedCount%1000 == 0 {
-						t.Logf("Deleted %d HTTPRoutes so far", deletedCount)
-					}
-				}
+				require.NoError(t, err)
 
 				duration := time.Since(startTime)
-				t.Logf("Successfully deleted %d HTTPRoutes in %s", deletedCount, duration)
+				t.Logf("Successfully deleted %d HTTPRoutes in %s", start, duration)
 			})
 		})
 
