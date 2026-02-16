@@ -188,13 +188,36 @@ func buildJWTAuthn(irListener *ir.HTTPListener) (*jwtauthnv3.JwtAuthentication, 
 
 			providerKey := fmt.Sprintf("%s/%s", route.Name, irProvider.Name)
 			jwtProviders[providerKey] = jwtProvider
-			reqs = append(reqs, &jwtauthnv3.JwtRequirement{
+
+			// Create the requirement for this provider
+			providerReq := &jwtauthnv3.JwtRequirement{
 				RequiresType: &jwtauthnv3.JwtRequirement_ProviderName{
 					ProviderName: providerKey,
 				},
-			})
+			}
+
+			// If the provider is optional, wrap it with RequiresAny that includes AllowMissing
+			if irProvider.Optional {
+				providerReq = &jwtauthnv3.JwtRequirement{
+					RequiresType: &jwtauthnv3.JwtRequirement_RequiresAny{
+						RequiresAny: &jwtauthnv3.JwtRequirementOrList{
+							Requirements: []*jwtauthnv3.JwtRequirement{
+								providerReq,
+								{
+									RequiresType: &jwtauthnv3.JwtRequirement_AllowMissing{
+										AllowMissing: &emptypb.Empty{},
+									},
+								},
+							},
+						},
+					},
+				}
+			}
+
+			reqs = append(reqs, providerReq)
 		}
 
+		// Add global AllowMissing if specified
 		if route.Security.JWT.AllowMissing {
 			reqs = append(reqs, &jwtauthnv3.JwtRequirement{
 				RequiresType: &jwtauthnv3.JwtRequirement_AllowMissing{
@@ -203,17 +226,60 @@ func buildJWTAuthn(irListener *ir.HTTPListener) (*jwtauthnv3.JwtAuthentication, 
 			})
 		}
 
+		// Combine requirements based on mode
 		if len(reqs) == 1 {
 			reqMap[route.Name] = reqs[0]
 		} else {
-			orListReqs := &jwtauthnv3.JwtRequirement{
-				RequiresType: &jwtauthnv3.JwtRequirement_RequiresAny{
-					RequiresAny: &jwtauthnv3.JwtRequirementOrList{
-						Requirements: reqs,
+			// Use RequiresAll if specified, otherwise use RequiresAny (default)
+			if route.Security.JWT.RequiresAll {
+				// When RequiresAll is true, use RequiresAll combinator
+				// Note: AllowMissing at the end doesn't make sense with RequiresAll,
+				// so we only include provider requirements
+				providerReqs := reqs
+				if route.Security.JWT.AllowMissing {
+					// If global AllowMissing is set with RequiresAll, we wrap the whole thing
+					// in RequiresAny with AllowMissing
+					allReqs := &jwtauthnv3.JwtRequirement{
+						RequiresType: &jwtauthnv3.JwtRequirement_RequiresAll{
+							RequiresAll: &jwtauthnv3.JwtRequirementAndList{
+								Requirements: reqs[:len(reqs)-1], // Exclude the AllowMissing we added
+							},
+						},
+					}
+					reqMap[route.Name] = &jwtauthnv3.JwtRequirement{
+						RequiresType: &jwtauthnv3.JwtRequirement_RequiresAny{
+							RequiresAny: &jwtauthnv3.JwtRequirementOrList{
+								Requirements: []*jwtauthnv3.JwtRequirement{
+									allReqs,
+									{
+										RequiresType: &jwtauthnv3.JwtRequirement_AllowMissing{
+											AllowMissing: &emptypb.Empty{},
+										},
+									},
+								},
+							},
+						},
+					}
+				} else {
+					reqMap[route.Name] = &jwtauthnv3.JwtRequirement{
+						RequiresType: &jwtauthnv3.JwtRequirement_RequiresAll{
+							RequiresAll: &jwtauthnv3.JwtRequirementAndList{
+								Requirements: providerReqs,
+							},
+						},
+					}
+				}
+			} else {
+				// Default RequiresAny behavior
+				orListReqs := &jwtauthnv3.JwtRequirement{
+					RequiresType: &jwtauthnv3.JwtRequirement_RequiresAny{
+						RequiresAny: &jwtauthnv3.JwtRequirementOrList{
+							Requirements: reqs,
+						},
 					},
-				},
+				}
+				reqMap[route.Name] = orListReqs
 			}
-			reqMap[route.Name] = orListReqs
 		}
 	}
 

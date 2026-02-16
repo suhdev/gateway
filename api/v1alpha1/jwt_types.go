@@ -9,16 +9,36 @@ import (
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 )
 
+// JWTRequirementMode defines the mode for combining multiple JWT provider requirements.
+// +kubebuilder:validation:Enum=RequiresAny;RequiresAll
+type JWTRequirementMode string
+
+const (
+	// JWTRequirementModeRequiresAny requires that any of the providers successfully validates the JWT.
+	JWTRequirementModeRequiresAny JWTRequirementMode = "RequiresAny"
+	// JWTRequirementModeRequiresAll requires that all of the providers successfully validate the JWT.
+	JWTRequirementModeRequiresAll JWTRequirementMode = "RequiresAll"
+)
+
 // JWT defines the configuration for JSON Web Token (JWT) authentication.
 type JWT struct {
 	// Optional determines whether a missing JWT is acceptable, defaulting to false if not specified.
 	// Note: Even if optional is set to true, JWT authentication will still fail if an invalid JWT is presented.
 	Optional *bool `json:"optional,omitempty"`
 
+	// RequirementMode specifies how multiple JWT providers are combined.
+	// When set to "RequiresAny" (default), the JWT is considered valid if any of the providers
+	// successfully validate the JWT. When set to "RequiresAll", all providers must successfully
+	// validate the JWT. Note that individual providers can still be marked as optional.
+	//
+	// +optional
+	// +kubebuilder:default=RequiresAny
+	RequirementMode *JWTRequirementMode `json:"requirementMode,omitempty"`
+
 	// Providers defines the JSON Web Token (JWT) authentication provider type.
-	// When multiple JWT providers are specified, the JWT is considered valid if
-	// any of the providers successfully validate the JWT. For additional details,
-	// see https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/jwt_authn_filter.html.
+	// When multiple JWT providers are specified, the JWT is considered valid based on the
+	// RequirementMode setting. For additional details, see
+	// https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/jwt_authn_filter.html.
 	//
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=4
@@ -36,6 +56,15 @@ type JWTProvider struct {
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=253
 	Name string `json:"name"`
+
+	// Optional determines whether a missing JWT from this provider is acceptable.
+	// If set to true, a missing JWT from this specific provider will not cause authentication
+	// to fail. However, if a JWT is present but invalid, authentication will still fail.
+	// This is useful when you have multiple providers and want some to be optional.
+	// Defaults to false.
+	//
+	// +optional
+	Optional *bool `json:"optional,omitempty"`
 
 	// Issuer is the principal that issued the JWT and takes the form of a URL or email address.
 	// For additional details, see https://tools.ietf.org/html/rfc7519#section-4.1.1 for
