@@ -1008,6 +1008,7 @@ func (t *Translator) buildJWT(
 	for i, p := range policy.Spec.JWT.Providers {
 		provider := ir.JWTProvider{
 			Name:           p.Name,
+			Optional:       ptr.Deref(p.Optional, false),
 			Issuer:         p.Issuer,
 			Audiences:      p.Audiences,
 			ClaimToHeaders: p.ClaimToHeaders,
@@ -1030,8 +1031,15 @@ func (t *Translator) buildJWT(
 		providers = append(providers, provider)
 	}
 
+	// Determine if RequiresAll mode is enabled
+	requiresAll := false
+	if policy.Spec.JWT.RequirementMode != nil {
+		requiresAll = *policy.Spec.JWT.RequirementMode == egv1a1.JWTRequirementModeRequiresAll
+	}
+
 	return &ir.JWT{
 		AllowMissing: ptr.Deref(policy.Spec.JWT.Optional, false),
+		RequiresAll:  requiresAll,
 		Providers:    providers,
 	}, nil
 }

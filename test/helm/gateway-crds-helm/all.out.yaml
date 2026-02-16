@@ -47276,9 +47276,9 @@ spec:
                   providers:
                     description: |-
                       Providers defines the JSON Web Token (JWT) authentication provider type.
-                      When multiple JWT providers are specified, the JWT is considered valid if
-                      any of the providers successfully validate the JWT. For additional details,
-                      see https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/jwt_authn_filter.html.
+                      When multiple JWT providers are specified, the JWT is considered valid based on the
+                      RequirementMode setting. For additional details, see
+                      https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/jwt_authn_filter.html.
                     items:
                       description: JWTProvider defines how a JSON Web Token (JWT)
                         can be verified.
@@ -47428,6 +47428,14 @@ spec:
                           maxLength: 253
                           minLength: 1
                           type: string
+                        optional:
+                          description: |-
+                            Optional determines whether a missing JWT from this provider is acceptable.
+                            If set to true, a missing JWT from this specific provider will not cause authentication
+                            to fail. However, if a JWT is present but invalid, authentication will still fail.
+                            This is useful when you have multiple providers and want some to be optional.
+                            Defaults to false.
+                          type: boolean
                         recomputeRoute:
                           description: |-
                             RecomputeRoute clears the route cache and recalculates the routing decision.
@@ -48564,6 +48572,17 @@ spec:
                     maxItems: 4
                     minItems: 1
                     type: array
+                  requirementMode:
+                    default: RequiresAny
+                    description: |-
+                      RequirementMode specifies how multiple JWT providers are combined.
+                      When set to "RequiresAny" (default), the JWT is considered valid if any of the providers
+                      successfully validate the JWT. When set to "RequiresAll", all providers must successfully
+                      validate the JWT. Note that individual providers can still be marked as optional.
+                    enum:
+                    - RequiresAny
+                    - RequiresAll
+                    type: string
                 required:
                 - providers
                 type: object

@@ -2774,7 +2774,8 @@ _Appears in:_
 | Field | Type | Required | Default | Description |
 | ---   | ---  | ---      | ---     | ---         |
 | `optional` | _boolean_ |  true  |  | Optional determines whether a missing JWT is acceptable, defaulting to false if not specified.<br />Note: Even if optional is set to true, JWT authentication will still fail if an invalid JWT is presented. |
-| `providers` | _[JWTProvider](#jwtprovider) array_ |  true  |  | Providers defines the JSON Web Token (JWT) authentication provider type.<br />When multiple JWT providers are specified, the JWT is considered valid if<br />any of the providers successfully validate the JWT. For additional details,<br />see https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/jwt_authn_filter.html. |
+| `requirementMode` | _[JWTRequirementMode](#jwtrequirementmode)_ |  false  | RequiresAny | RequirementMode specifies how multiple JWT providers are combined.<br />When set to "RequiresAny" (default), the JWT is considered valid if any of the providers<br />successfully validate the JWT. When set to "RequiresAll", all providers must successfully<br />validate the JWT. Note that individual providers can still be marked as optional. |
+| `providers` | _[JWTProvider](#jwtprovider) array_ |  true  |  | Providers defines the JSON Web Token (JWT) authentication provider type.<br />When multiple JWT providers are specified, the JWT is considered valid based on the<br />RequirementMode setting. For additional details, see<br />https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/jwt_authn_filter.html. |
 
 
 #### JWTClaim
@@ -2871,6 +2872,7 @@ _Appears in:_
 | Field | Type | Required | Default | Description |
 | ---   | ---  | ---      | ---     | ---         |
 | `name` | _string_ |  true  |  | Name defines a unique name for the JWT provider. A name can have a variety of forms,<br />including RFC1123 subdomains, RFC 1123 labels, or RFC 1035 labels. |
+| `optional` | _boolean_ |  false  |  | Optional determines whether a missing JWT from this provider is acceptable.<br />If set to true, a missing JWT from this specific provider will not cause authentication<br />to fail. However, if a JWT is present but invalid, authentication will still fail.<br />This is useful when you have multiple providers and want some to be optional.<br />Defaults to false. |
 | `issuer` | _string_ |  false  |  | Issuer is the principal that issued the JWT and takes the form of a URL or email address.<br />For additional details, see https://tools.ietf.org/html/rfc7519#section-4.1.1 for<br />URL format and https://rfc-editor.org/rfc/rfc5322.html for email format. If not provided,<br />the JWT issuer is not checked. |
 | `audiences` | _string array_ |  false  |  | Audiences is a list of JWT audiences allowed access. For additional details, see<br />https://tools.ietf.org/html/rfc7519#section-4.1.3. If not provided, JWT audiences<br />are not checked. |
 | `remoteJWKS` | _[RemoteJWKS](#remotejwks)_ |  false  |  | RemoteJWKS defines how to fetch and cache JSON Web Key Sets (JWKS) from a remote<br />HTTP/HTTPS endpoint. |
@@ -2878,6 +2880,21 @@ _Appears in:_
 | `claimToHeaders` | _[ClaimToHeader](#claimtoheader) array_ |  false  |  | ClaimToHeaders is a list of JWT claims that must be extracted into HTTP request headers<br />For examples, following config:<br />The claim must be of type; string, int, double, bool. Array type claims are not supported |
 | `recomputeRoute` | _boolean_ |  false  |  | RecomputeRoute clears the route cache and recalculates the routing decision.<br />This field must be enabled if the headers generated from the claim are used for<br />route matching decisions. If the recomputation selects a new route, features targeting<br />the new matched route will be applied. |
 | `extractFrom` | _[JWTExtractor](#jwtextractor)_ |  false  |  | ExtractFrom defines different ways to extract the JWT token from HTTP request.<br />If empty, it defaults to extract JWT token from the Authorization HTTP request header using Bearer schema<br />or access_token from query parameters. |
+
+
+#### JWTRequirementMode
+
+_Underlying type:_ _string_
+
+JWTRequirementMode defines the mode for combining multiple JWT provider requirements.
+
+_Appears in:_
+- [JWT](#jwt)
+
+| Value | Description |
+| ----- | ----------- |
+| `RequiresAny` | JWTRequirementModeRequiresAny requires that any of the providers successfully validates the JWT.<br /> | 
+| `RequiresAll` | JWTRequirementModeRequiresAll requires that all of the providers successfully validate the JWT.<br /> | 
 
 
 #### JWTScope

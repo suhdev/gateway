@@ -1021,6 +1021,11 @@ type JWT struct {
 	// AllowMissing determines whether a missing JWT is acceptable.
 	AllowMissing bool `json:"allowMissing,omitempty" yaml:"allowMissing,omitempty"`
 
+	// RequiresAll determines whether all providers must successfully validate the JWT.
+	// When false (default), the JWT is considered valid if any provider validates it (RequiresAny).
+	// When true, all providers must validate the JWT (RequiresAll).
+	RequiresAll bool `json:"requiresAll,omitempty" yaml:"requiresAll,omitempty"`
+
 	// Providers defines a list of JSON Web Token (JWT) authentication providers.
 	Providers []JWTProvider `json:"providers,omitempty" yaml:"providers,omitempty"`
 }
@@ -1032,6 +1037,9 @@ type JWTProvider struct {
 	// Name defines a unique name for the JWT provider. A name can have a variety of forms,
 	// including RFC1123 subdomains, RFC 1123 labels, or RFC 1035 labels.
 	Name string `json:"name"`
+
+	// Optional determines whether a missing JWT from this provider is acceptable.
+	Optional bool `json:"optional,omitempty"`
 
 	// Issuer is the principal that issued the JWT and takes the form of a URL or email address.
 	Issuer string `json:"issuer,omitempty"`
